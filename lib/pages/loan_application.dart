@@ -104,7 +104,9 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
         }
       }
       setState(() {
-        // Bonus section
+        double revenueBasedMax = _businessRevenue / 3;
+        _maxLoanAmount = revenueBasedMax;
+        _minLoanAmount = min(_minLoanAmount, _maxLoanAmount);
         _desiredLoanAmount = _desiredLoanAmount.clamp(_minLoanAmount, _maxLoanAmount);
         _revenueSharePercentage = _revenueSharePercentage.clamp(_revenuePercentageMin, _revenuePercentageMax);
       });
@@ -191,7 +193,12 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                             onSubmitted: (value) {
                               setState(() {
                                 _businessRevenue = double.tryParse(value) ?? 250000;
-                                _desiredLoanAmount = min(_desiredLoanAmount, _businessRevenue / 3);
+                                double revenueBasedMax = _businessRevenue / 3;
+                                _maxLoanAmount = revenueBasedMax;
+                                if (_minLoanAmount > _maxLoanAmount) {
+                                  _minLoanAmount = 0;
+                                }
+                                _desiredLoanAmount = _desiredLoanAmount.clamp(_minLoanAmount, _maxLoanAmount);
                               });
                             },
                             decoration: InputDecoration(
