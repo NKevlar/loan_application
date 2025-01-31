@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:expressions/expressions.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:loan_application/providers/config_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -28,7 +29,8 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
   String _revenueShareFrequency = 'Monthly';
   String _repaymentDelay = '30 days';
   double _feePercentage = 0.6;
-  double _revenueSharePercentage = 7.56;
+  String _revenueSharePercentageParser = '';
+  double _revenueSharePercentage = 0;
   double _revenuePercentageMin = 4;
   double _revenuePercentageMax = 8;
   List<String> _repaymentDelayOptions = [];
@@ -72,8 +74,9 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
             _businessRevenue = double.tryParse(config.placeholder.replaceAll('\$', '').replaceAll(',', '')) ?? 250000;
             break;
           case 'revenue_percentage':
+            _revenueSharePercentageParser = config.value;
             _revenueSharePercentage = _calculate.evaluateExpression(
-              config.value,
+              _revenueSharePercentageParser,
               {
                 'revenue_amount': _businessRevenue,
                 'funding_amount': _desiredLoanAmount,
@@ -104,11 +107,9 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
         }
       }
       setState(() {
-        double revenueBasedMax = _businessRevenue / 3;
-        _maxLoanAmount = revenueBasedMax;
-        _minLoanAmount = min(_minLoanAmount, _maxLoanAmount);
         _desiredLoanAmount = _desiredLoanAmount.clamp(_minLoanAmount, _maxLoanAmount);
-        _revenueSharePercentage = _revenueSharePercentage.clamp(_revenuePercentageMin, _revenuePercentageMax);
+        _revenueSharePercentage = _revenueSharePercentage.clamp(_revenuePercentageMin/100, _revenuePercentageMax/100);
+        _updateCalculations();
       });
     }
   }
@@ -134,6 +135,18 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
     setState(() {
       _fundsUsage.removeAt(index);
     });
+  }
+
+  void _updateCalculations() {
+    _calculate.updateCalculations(
+      desiredLoanAmount: _desiredLoanAmount,
+      feePercentage: _feePercentage,
+      businessRevenue: _businessRevenue,
+      revenueSharePercentage: _revenueSharePercentage,
+      revenueShareFrequency: _revenueShareFrequency,
+      delayDays: int.parse(_repaymentDelay.split(' ')[0]),
+    );
+    setState(() {});
   }
 
   @override
@@ -190,6 +203,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                           SizedBox(height: 8),
                           TextField(
                             keyboardType: TextInputType.number,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                             onSubmitted: (value) {
                               setState(() {
                                 _businessRevenue = double.tryParse(value) ?? 250000;
@@ -199,6 +213,14 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                                   _minLoanAmount = 0;
                                 }
                                 _desiredLoanAmount = _desiredLoanAmount.clamp(_minLoanAmount, _maxLoanAmount);
+                                _revenueSharePercentage = _calculate.evaluateExpression(
+                                  _revenueSharePercentageParser,
+                                  {
+                                    'revenue_amount': _businessRevenue,
+                                    'funding_amount': _desiredLoanAmount,
+                                  },
+                                );
+                                _updateCalculations();
                               });
                             },
                             decoration: InputDecoration(
@@ -245,6 +267,14 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                                           onChanged: (value) {
                                             setState(() {
                                               _desiredLoanAmount = value;
+                                              _revenueSharePercentage = _calculate.evaluateExpression(
+                                                _revenueSharePercentageParser,
+                                                {
+                                                  'revenue_amount': _businessRevenue,
+                                                  'funding_amount': _desiredLoanAmount,
+                                                },
+                                              );
+                                              _updateCalculations();
                                             });
                                           },
                                         ),
@@ -291,7 +321,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                               ),
                               SizedBox(width: 8),
                               Text(
-                                '${_revenueSharePercentage.toStringAsFixed(2)}%',
+                                '${(_revenueSharePercentage*100).toStringAsFixed(2)}%',
                                 style: TextStyle(
                                   fontSize: 16, fontWeight: FontWeight.w600, color: Colors.blueAccent),
                               ),
@@ -314,6 +344,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                                         onChanged: (value) {
                                           setState(() {
                                             _revenueShareFrequency = value.toString();
+                                            _updateCalculations();
                                           });
                                         },
                                       ),
@@ -343,6 +374,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                                 onChanged: (value) {
                                   setState(() {
                                     _repaymentDelay = value!;
+                                    _updateCalculations();
                                   });
                                 },
                               ),
@@ -368,6 +400,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                                   onChanged: (value) {
                                     setState(() {
                                       _selectedCategory = value;
+                                      _updateCalculations();
                                     });
                                   },
                                 ),
@@ -542,7 +575,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                               ),
                               SizedBox(width: 8),
                               Text(
-                                '\$${_calculate.calculateFees(_desiredLoanAmount, _feePercentage).toStringAsFixed(0)}',
+                                '\$${_calculate.fees.toStringAsFixed(0)}',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
@@ -569,7 +602,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                               ),
                               SizedBox(width: 8),
                               Text(
-                                '\$${_calculate.calculateTotalRevenueShare(_desiredLoanAmount, _feePercentage).toStringAsFixed(0)}',
+                                '\$${_calculate.totalRevenueShare.toStringAsFixed(0)}',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
@@ -592,7 +625,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                               ),
                               SizedBox(width: 8),
                               Text(
-                                '${_calculate.calculateExpectedTransfers(_desiredLoanAmount, _businessRevenue, _revenueSharePercentage, _revenueShareFrequency)}',
+                                '${_calculate.expectedTransfers}',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
@@ -615,9 +648,7 @@ class _LoanApplicationPageState extends State<LoanApplicationPage> {
                               ),
                               SizedBox(width: 8),
                               Text(
-                                '${_calculate.calculateExpectedCompletionDate(
-                                    _calculate.calculateExpectedTransfers(_desiredLoanAmount, _businessRevenue, _revenueSharePercentage, _revenueShareFrequency),
-                                    int.parse(_repaymentDelay.split(' ')[0]), _revenueShareFrequency)}',
+                                _calculate.completionDate,
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
